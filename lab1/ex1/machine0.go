@@ -23,11 +23,16 @@ func server(port string){
     message, err := bufio.NewReader(conn).ReadString('\n')
     if err != nil { break }
     // output message received
-    fmt.Print("--- Message Received:", string(message))
-    // sample process for string received
-    newmessage := strings.ToUpper(message)
-    // send new string back to client
-    conn.Write([]byte(newmessage + "\n"))
+    if strings.ToLower(message) == "stop\n"{
+      os.Exit(1)
+    } else {
+      fmt.Print("--- Message Received:", string(message))
+      // sample process for string received
+      newmessage := strings.ToUpper(message)
+      // send new string back to client
+      conn.Write([]byte(newmessage + "\n"))
+    }
+
   }
 }
 
