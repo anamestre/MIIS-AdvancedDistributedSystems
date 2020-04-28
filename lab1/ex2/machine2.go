@@ -27,11 +27,18 @@ func server(port string){
 
 func serverConnection(conn net.Conn){
   // will listen for message to process ending in newline (\n)
-  message, _ := bufio.NewReader(conn).ReadString('\n')
+  message, err := bufio.NewReader(conn).ReadString('\n')
+  if err != nil {
+        fmt.Println("client left..")
+        conn.Close()
+        return
+    }
   //if err != nil { break }
   // output message received
   if strings.ToLower(message) == "stop\n"{
-    os.Exit(1)
+    //os.Exit(1)
+    conn.Close()
+    return
   } else {
     fmt.Print("--- Message Received:", string(message))
     // sample process for string received
@@ -66,29 +73,20 @@ func client(ips []string){
   for i, ip := range ips {
     connections[i] = connect(ip)
   }
-  for i, _ := range connections {
-      fmt.Println("Connection" + ips[i])
-  }
 
   for {
       // read in input from stdin
       reader := bufio.NewReader(os.Stdin)
-      fmt.Println("Text to send: ")
+      fmt.Print("Text to send: ")
       text, _ := reader.ReadString('\n')
 
-      for i, conn := range connections {
-        fmt.Println("Sending text to " + ips[i])
-        if conn != nil {
-          fmt.Println("Conn is not null")
-        }
+      for _, conn := range connections {
         // send to socket
         fmt.Fprintf(conn, text + "\n")
-        fmt.Println("Message sent to socket")
         // listen for reply
         message, err := bufio.NewReader(conn).ReadString('\n')
-        fmt.Println("Reader:")
         if err != nil { break }
-        fmt.Println("Message from server: " + message)
+        fmt.Print("Message from server: " + message)
       }
   }
 }
