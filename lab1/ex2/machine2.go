@@ -24,7 +24,9 @@ func server(port string){
   }
 }
 
-
+/*
+  Handles a connection (conn) for the server.
+*/
 func serverConnection(conn net.Conn){
   // will listen for message to process ending in newline (\n)
   message, err := bufio.NewReader(conn).ReadString('\n')
@@ -33,10 +35,10 @@ func serverConnection(conn net.Conn){
         conn.Close()
         return
     }
-  //if err != nil { break }
   // output message received
-  if strings.ToLower(message) == "stop\n"{
-    //os.Exit(1)
+  temp := strings.TrimSpace(string(message))
+  if strings.ToLower(temp) == "stop"{
+    fmt.Println("client left..")
     conn.Close()
     return
   } else {
@@ -49,6 +51,10 @@ func serverConnection(conn net.Conn){
   }
 }
 
+/*
+  Makes the first connections with the corresponding servers.
+  Doesn't stop until a connection is made.
+*/
 func connect(ip string) net.Conn{
   fmt.Print("Checking if server " + ip + " has started" + "\n")
   conn, err := net.Dial("tcp", ip)
@@ -69,9 +75,9 @@ func connect(ip string) net.Conn{
   Connects with a server with the IP "ip" (which already contains the port).
 */
 func client(ips []string){
-  connections := make([]net.Conn, len(ips))
-  for i, ip := range ips {
-    connections[i] = connect(ip)
+  connections := map[string]net.Conn{}
+  for _, ip := range ips {
+    connections[ip] = connect(ip)
   }
 
   for {
@@ -79,14 +85,18 @@ func client(ips []string){
       reader := bufio.NewReader(os.Stdin)
       fmt.Print("Text to send: ")
       text, _ := reader.ReadString('\n')
+      temp := strings.TrimSpace(string(text))
+      temp = strings.ToLower(temp)
 
       for _, conn := range connections {
-        // send to socket
-        fmt.Fprintf(conn, text + "\n")
-        // listen for reply
-        message, err := bufio.NewReader(conn).ReadString('\n')
-        if err != nil { break }
-        fmt.Print("Message from server: " + message)
+          fmt.Fprintf(conn, text + "\n")
+          // listen for reply
+          message, err := bufio.NewReader(conn).ReadString('\n')
+          if err != nil { break }
+          fmt.Print("Message from server: " + message)
+      }
+      if temp == "stop"{
+        os.Exit(1)
       }
   }
 }
@@ -113,33 +123,27 @@ func getConfig(myFile string) (string, []string){
 
   scanner := bufio.NewScanner(file)
   first := true
-  serverIP := ""
+  serverPort := ""
   ips := []string{}
   for scanner.Scan() {
       if first {
-        serverIP = scanner.Text()
-        serverIP = strings.Split(serverIP, ":")[1]
+        serverPort = scanner.Text()
+        serverPort = strings.Split(serverIP, ":")[1]
         first = false
       } else {
         ips = append(ips, scanner.Text())
       }
   }
-  return serverIP, ips
-
+  return serverPort, ips
 }
-
 
 
 func main() {
     if len(os.Args) != 2{
       usage()
     } else {
-      //port := ":6001" // Port used for creating our own server
-      //ip := "127.0.0.1:6002" // Ip used for connecting to the other server
       port, ips := getConfig(os.Args[1])
       go server(port)
-      //length := len(ips) - 1
       client(ips)
-      //client(ip)
   }
 }
