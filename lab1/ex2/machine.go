@@ -51,6 +51,7 @@ func serverConnection(conn net.Conn){
   }
 }
 
+
 /*
   Makes the first connections with the corresponding servers.
   Doesn't stop until a connection is made.
@@ -128,7 +129,7 @@ func getConfig(myFile string) (string, []string){
   for scanner.Scan() {
       if first {
         serverPort = scanner.Text()
-        serverPort = strings.Split(serverIP, ":")[1]
+        serverPort = strings.Split(serverPort, ":")[1]
         first = false
       } else {
         ips = append(ips, scanner.Text())

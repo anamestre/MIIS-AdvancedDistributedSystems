@@ -23,7 +23,8 @@ func server(port string){
     message, err := bufio.NewReader(conn).ReadString('\n')
     if err != nil { break }
     // output message received
-    if strings.ToLower(message) == "stop\n"{
+    temp := strings.TrimSpace(string(message))
+    if strings.ToLower(temp) == "stop"{
       os.Exit(1)
     } else {
       fmt.Print("--- Message Received:", string(message))
