@@ -15,3 +15,10 @@ This action is not necessary since the executables are already provided.
   - Open a terminal (per server), execute machine: ./machine <configuration file>
 #### Batch execution:
   - Launch (double click) run_chat.bat : this will open 5 terminals, each one launching an instance of machine.go with its corresponding configuration file (configFile_600X.txt).
+
+### COMMENT: whatever configuration file that follows this format can be replaced:
+List of IPS and its Port: \<IP address> : \<Port number>
+#### For example:
+127.0.0.1:6002 \
+10.80.29.90:6001 \
+127.0.0.1:6001
