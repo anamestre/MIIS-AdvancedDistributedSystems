@@ -36,16 +36,18 @@ func serverConnection(conn net.Conn, ch chan string){
         return
     }
   // output message received
-  //temp := strings.TrimSpace(string(message))
-  temp := strings.Split(string(message), ";")
-  if strings.ToLower(temp[0]) == "stop"{
+  text := strings.TrimSpace(string(message))
+  temp := strings.Split(string(text), ";")
+  message = temp[0]
+  ip := temp[1]
+  if strings.ToLower(message) == "stop"{
     ip := strings.TrimSpace(string(temp[1]))
-    fmt.Println("client left.." + ip)
-    conn.Close()
+    fmt.Println("client " + ip + " left..")
     ch <- ip
+    conn.Close()
     return
   } else {
-    fmt.Print("--- Message Received:", string(message))
+    fmt.Println("\n--- Message Received from " + ip + ": " + string(message))
     // sample process for string received
     newmessage := strings.ToUpper(message)
     // send new string back to client
@@ -73,53 +75,24 @@ func connect(ip string) net.Conn{
   }
 }
 
-func waitForStop(ch chan string, connections map[string]net.Conn){
-    elem, _ := <- ch
-    delete(connections, elem)
-}
-
 
 /*
-  Connects with a server with the IP "ip" (which already contains the port).
+  Awaits for an stop message on channel from this node's server and
+  updates the list of connected nodes.
 */
-func client(ips []string, ch chan string, myIP string){
-  connections := map[string]net.Conn{}
-  for _, ip := range ips {
-    connections[ip] = connect(ip)
-  }
-
+func waitForStop(ch chan string, connections map[string]Connection){
   for {
-      // read in input from stdin
-      reader := bufio.NewReader(os.Stdin)
-      fmt.Print("Text to send: ")
-      text, _ := reader.ReadString('\n')
-      go waitForStop(ch, connections)
-      //fmt.Print("Client loop, connections length: ")
-      //fmt.Println(len(connections))
-      if len(connections) == 0 {
-        //fmt.Println("Len connections == 0")
-        os.Exit(1)
-      }
-      temp := strings.TrimSpace(string(text))
-      temp = strings.ToLower(temp)
+    elem, _ := <- ch
+    delete(connections, elem) // remove ip from our list of connections
 
-      for _, conn := range connections {
-        if temp == "stop"{
-          fmt.Println("Client ip " + myIP + " senting stop")
-          text = "stop;" + myIP
-        }
-          fmt.Fprintf(conn, text + "\n")
-          // listen for reply
-          message, err := bufio.NewReader(conn).ReadString('\n')
-          if err != nil { break }
-          fmt.Print("Message from server: " + message)
-      }
-      if temp == "stop"{
-        fmt.Println("Client: Exit due to stop")
-        os.Exit(1)
-      }
+    // If there are no more connections, we shut down the process
+    if len(connections) == 0 {
+      os.Exit(1)
+    }
   }
+
 }
+
 
 
 /*
@@ -147,80 +120,85 @@ func getConfig(myFile string) (string, []string){
   ips := []string{}
   for scanner.Scan() {
       if first {
-        serverIP = scanner.Text()
+        serverIP = scanner.Text() // The first line is the server ip
         first = false
       } else {
-        ips = append(ips, scanner.Text())
+        ips = append(ips, scanner.Text()) // Saving every client's ip
       }
   }
   return serverIP, ips
 }
 
-/*
 
 type Connection struct {
-	IP string
-	Port string
-  Ch chan string
+    Channel chan string
+    Connection net.Conn
 }
 
-
-func clients(connections){
-    for {
-      fmt.Print("Text to send: ")
-      text, _ := reader.ReadString('\n')
-      for every connection {
-          envia al seu channel el text
-      }
+/*
+  Connects with a server with the IP "ip" (which already contains the port).
+*/
+func clients(ips []string, ch chan string, myIP string) {
+    // Connect with the given ips and save their connections
+    // and channels in a map.
+    connections := map[string]Connection{}
+    for _, ip := range ips {
+      chIP := make(chan string)
+      c := Connection{chIP, connect(ip)}
+      connections[ip] = c
     }
-} */
 
-func clients(ips []string, ch chan string, myIP string){
-  connections := map[string]net.Conn{}
-  for _, ip := range ips {
-    connections[ip] = connect(ip)
-  }
-  for {
-    reader := bufio.NewReader(os.Stdin)
-    fmt.Print("Text to send: ")
-    text, _ := reader.ReadString('\n')
+    // We handle every client (connected ip) concurrently.
+    for ip, c := range connections{
+        go handleClient(c, myIP, ip)
+    }
+
+    // Checking whether an "stop" message has arrived
     go waitForStop(ch, connections)
-    //fmt.Print("Client loop, connections length: ")
-    //fmt.Println(len(connections))
-    if len(connections) == 0 {
-      //fmt.Println("Len connections == 0")
-      os.Exit(1)
-    }
-    for ip, conn := range connections {
-      go handleClient(conn, text, ip)
-    }
-    temp := strings.TrimSpace(string(text))
-    temp = strings.ToLower(temp)
-    if temp == "stop"{
-      fmt.Println("Client: Exit due to stop")
-      os.Exit(1)
-    }
-  }
+
+
+    // Reading messages from terminal and sending them to the corresponding servers.
+    for {
+        // read in input from stdin
+        reader := bufio.NewReader(os.Stdin)
+        fmt.Print("Text to send: ")
+        text, _ := reader.ReadString('\n')
+
+        // Send to connections
+        for _, c := range connections {
+          c.Channel <- text
+        }
+
+        // If the input message is "stop", we close the program.
+        temp := strings.TrimSpace(string(text))
+        temp = strings.ToLower(temp)
+        if temp == "stop"{
+          //time.Sleep(time.Second/4)
+          fmt.Println("Program has been stopped")
+          os.Exit(1)
+        }
+      }
 }
 
 
-func handleClient(conn net.Conn, text string, myIP string){
-    temp := strings.TrimSpace(string(text))
-    temp = strings.ToLower(temp)
-    if temp == "stop"{
-      fmt.Println("Client ip " + myIP + " senting stop")
-      text = "stop;" + myIP
+/*
+  Send the written message to its corresponding server.
+  c = connection with a client.
+  myIP = the IP corresponding to the server of this program (we use it as an id)
+*/
+func handleClient(c Connection, myIP string, ip string){
+    for {
+      text, _ := <- c.Channel
+      conn := c.Connection
+      temp := strings.TrimSpace(string(text)) + ";" + myIP
+      fmt.Fprintf(conn, temp + "\n")
+      // listen for reply
+      message, _ := bufio.NewReader(conn).ReadString('\n')
+      //if err != nil { break }
+      fmt.Print("\nMessage from server " + ip + ": " + message)
     }
-    fmt.Fprintf(conn, text + "\n")
-    // listen for reply
-    message, _ := bufio.NewReader(conn).ReadString('\n')
-    //if err != nil { break }
-    fmt.Print("Message from server: " + message)
-    /*for {
-      //llegeixo del meu channel
-      //envio missatge al server al qual estic connectat
-    }*/
-  }
+}
+
 
 func main() {
     if len(os.Args) != 2{
@@ -230,7 +208,6 @@ func main() {
       port := strings.Split(myIP, ":")[1]
       ch := make(chan string)
       go server(port, ch)
-      //client(ips, ch, myIP)
-      client(ips, ch, myIP)
+      clients(ips, ch, myIP)
   }
 }
