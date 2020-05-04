@@ -7,14 +7,30 @@ import ("net"
         "time"
         "strings")
 
+func turnServerUp(port string) (net.Listener){
+  fmt.Println("--- Launching server in port: " + port + "...")
+  // listen on all interfaces,
+  ln, _ := net.Listen("tcp", ":" + port)
+  return ln
+}
+
+func connectClients(ips []string){
+  for _, ip := range ips {
+    chIP := make(chan string)
+    c := Connection{chIP, connect(ip), false, false}
+    connections[ip] = &c
+  }
+}
+
 
 /*
   Creates a server using the Port "port".
 */
-func server(port string, ch chan string){
-  fmt.Println("--- Launching server in port: " + port + "...")
+//func server(port string, ch chan string){
+func server(ln net.Listener, ch chan string) {
+  /*fmt.Println("--- Launching server in port: " + port + "...")
   // listen on all interfaces,
-  ln, _ := net.Listen("tcp", ":"+port)
+  ln, _ := net.Listen("tcp", ":" + port)*/
 
   // run loop forever (or until ctrl-c)
   for {
@@ -24,6 +40,10 @@ func server(port string, ch chan string){
   }
 }
 
+/*
+  Checks whether all connections have finished the corresponding wave or not.
+  First marks if this is the first or the second wave.
+*/
 func allConnections(first bool) bool {
   for _, conn := range connections {
       if first {
@@ -35,17 +55,20 @@ func allConnections(first bool) bool {
   return true
 }
 
+
 /*
   Handles a connection (conn) for the server.
 */
 func serverConnection(conn net.Conn, ch chan string){
-  // will listen for message to process ending in newline (\n)
+  // Wait until all servers are up and running
   if firstWave{
     for {
       if len(connections) > 0 {break}
     }
   }
+
   message, err := bufio.NewReader(conn).ReadString('\n')
+  fmt.Println("Message received: " + message)
   if err != nil {
         fmt.Println("client left..")
         conn.Close()
@@ -84,17 +107,23 @@ func serverConnection(conn net.Conn, ch chan string){
 
   } else if message == "finish"{
     if secondWave && !initial {
-      if len(connections) > 1 { // This means that it has neighbours and not only a parent
+      fmt.Println("Second wave && !initial")
+      if len(connections) > 0 { // This means that it has neighbours and not only a parent
          ch <- message
       }
       secondWave = false
     }
     if len(connections) > 0 {
-      connections[ip].secondWave = true
+      fmt.Println("Connections > 0")
+      if _, ok := connections[ip]; ok {
+          connections[ip].secondWave = true
+      }
     }
     if allConnections(false) {
+      fmt.Println("All connections")
       // If this is not an initial node, send message to parent
       if !initial {
+        fmt.Println("Sending finish to parent")
         ch <- "parent;finish"
         time.Sleep(time.Second/4)
         os.Exit(0)
@@ -159,7 +188,6 @@ func getConfig(myFile string) (string, string, string, bool, []string){
   ips := []string{}
   for scanner.Scan() {
       if first {
-        //serverIP = scanner.Text() // The first line is the server ip
         texts := strings.Split(scanner.Text(), ":")
         if len(texts) == 4 {
           fmt.Println("This is an initial node")
@@ -178,27 +206,17 @@ func getConfig(myFile string) (string, string, string, bool, []string){
 
 
 /*
-  Defines a connection between this machine and another one.
-*/
-type Connection struct {
-    Channel chan string
-    Connection net.Conn
-    firstWave bool
-    secondWave bool
-}
-
-/*
   Connects with a server with the IP "ip" (which already contains the port).
 */
 func clients(ips []string, ch chan string, myIP string) {
     // Connect with the given ips and save their connections
     // and channels in a map.
     //connections := map[string]Connection{}
-    for _, ip := range ips {
+    /*for _, ip := range ips {
       chIP := make(chan string)
       c := Connection{chIP, connect(ip), false, false}
       connections[ip] = &c
-    }
+    }*/
 
     // We handle every client (connected ip) concurrently.
     for _, c := range connections{
@@ -210,7 +228,7 @@ func clients(ips []string, ch chan string, myIP string) {
           for _, c := range connections {
             c.Channel <- "hello"
           }
-          fmt.Println("Sending first wave message to neighbours")
+          fmt.Println("Init -> Sending first wave message to neighbours")
           firstWave = false
         }
 
@@ -230,8 +248,10 @@ func clients(ips []string, ch chan string, myIP string) {
           } else {
             fmt.Println("Sending second wave message to neighbours")
           }
-          for _, c := range connections {
+          for ip, c := range connections {
+            fmt.Println("Sending to connection with IP: " + ip)
             c.Channel <- messages[0]
+            fmt.Println("Sent to channel")
           }
         }
       }
@@ -252,10 +272,25 @@ func handleClient(c Connection, myIP string){
     }
 }
 
+
+/*
+  Defines a connection between this machine and another one.
+*/
+type Connection struct {
+    Channel chan string
+    Connection net.Conn
+    firstWave bool
+    secondWave bool
+}
+
+
+/*
+  Initializations
+*/
 var firstWave bool = true
 var secondWave bool = false
-var connections = map[string]*Connection{}
-var parent Connection
+var connections = map[string]*Connection{} // Stores neighbours' connections
+var parent Connection // stores parent's connection
 var initial bool = false
 var myID string
 
@@ -266,8 +301,11 @@ func main() {
       var myIP, port string
       var ips []string
       myIP, port, myID, initial, ips = getConfig(os.Args[1])
+      fmt.Println("This is the server num " + port)
+      ln := turnServerUp(port)
+      connectClients(ips)
       ch := make(chan string)
-      go server(port, ch)
+      go server(ln, ch)
       clients(ips, ch, myIP + ":" + port)
 
   }
