@@ -48,11 +48,13 @@ func server(ln net.Listener, ch chan string) {
   First marks if this is the first or the second wave.
 */
 func allConnections(first bool) bool {
-  for _, conn := range connections {
-      if first {
-        if ! conn.firstWave {return false}
-      } else {
-        if ! conn.secondWave {return false}
+  for ip, conn := range connections {
+      if ip != parent.ip {
+        if first {
+          if ! conn.firstWave {return false}
+        } else {
+          if ! conn.secondWave {return false}
+        }
       }
   }
   return true
@@ -74,13 +76,9 @@ func handleWave(ip, id string, ch chan string){
   if waveID == "" {
     waveID = id
     // Send to neighbours
-    fmt.Println("1. My parent is " + id)
+    fmt.Println("My parent is " + id)
     parent = *connections[ip]
-    delete(connections, ip) // Remove parent from list of neighbours
-    fmt.Println("1. My neighbours are:")
-    for i, c := range connections {
-      fmt.Println(" 1. Neighbour: " + i + " " + c.ip)
-    }
+    //delete(connections, ip) // Remove parent from list of neighbours
     if len(connections) > 0 { // This means that it has neighbours and not only a parent
        ch <- "wave;" + id // Send wave to neighbours
     }
@@ -88,28 +86,20 @@ func handleWave(ip, id string, ch chan string){
     // If this wave has a larger ID than the wave that has already hit me
     if id > waveID {
       // Mark this new node as a parent
+      fmt.Println("My parent is " + id)
       waveID = id
-      fmt.Println("2. My parent is " + id)
-      fmt.Println("2. My current parent's IP is " + parent.ip)
-      fmt.Println("2. My IP is " + myIP)
-      if parent.ip != myIP {
-        fmt.Println("My IP is not the same as my parent's")
+      /*if parent.ip != myIP {
         oldParent := deepCopy(parent)
         connections[parent.ip] = &oldParent // Afegeixo l'antic pare com a neighbour
-      }
+      }*/
       parent = deepCopy(*connections[ip])
-      //parent = *connections[ip] // Assigno el nou parent
-      delete(connections, ip) // Remove parent from list of neighbours
-      fmt.Println("2. My neighbours are:")
-      for i, c := range connections {
-        fmt.Println(" 2. Neighbour: " + i + " " + c.ip)
-      }
+      //delete(connections, ip) // Remove parent from list of neighbours
       if len(connections) > 0 { // This means that it has neighbours and not only a parent
-         ch <- "wave;" + id // Send wave to neighbours
          // Treure el rebut de tots els neighbours
          for _, c := range connections {
            c.firstWave = false
          }
+         ch <- "wave;" + id // Send wave to neighbours
       }
     } else if id == waveID{
       // Marco com a rebut
@@ -119,14 +109,12 @@ func handleWave(ip, id string, ch chan string){
     // Si es que si: Envio al meu parent
     if allConnections(true) {
       // If this is not an initial node, send message to parent
-      fmt.Println("All connections are true")
       if myIP == parent.ip {
         fmt.Println("Decision event")
-        ch <- "finish"
+        ch <- "finish;" + id
       } else {
         ch <- "parent;wave;" + id
       }
-
       secondWave = true
     }
   }
@@ -140,9 +128,9 @@ func handleWave(ip, id string, ch chan string){
 */
 func handleSecondWave(ip, id string, ch chan string){
   fmt.Println("Received second wave from " + ip)
-  if secondWave && !initial {
+  if secondWave && parent.ip != myIP {
     if len(connections) > 0 { // This means that it has neighbours and not only a parent
-       ch <- "finish"
+       ch <- "finish;" + myID
     }
     secondWave = false
   }
@@ -152,9 +140,10 @@ func handleSecondWave(ip, id string, ch chan string){
     }
   }
   if allConnections(false) {
+    fmt.Println("All connections")
     // If this is not an initial node, send message to parent
-    if !initial {
-      ch <- "parent;finish"
+    if parent.ip != myIP {
+      ch <- "parent;finish;" + myID
       time.Sleep(time.Second/4)
     }
     fmt.Println("I'm going to finish.")
@@ -181,6 +170,8 @@ func serverConnection(conn net.Conn, ch chan string){
       handleSecondWave(ip, id, ch)
     }
   }
+  newmessage := strings.ToUpper(message)
+  conn.Write([]byte(newmessage + "\n"))
   serverConnection(conn, ch)
 }
 
@@ -276,15 +267,21 @@ func clients(ips []string, ch chan string, myIP string) {
         if messages[0] == "parent" {
           if messages[1] == "wave"{
             fmt.Println("Sending first wave message to parent")
+          } else {
+            fmt.Println("Sending second wave message to parent")
           }
           parent.Channel <- strings.Join(messages[1:], ";")
         } else {
           // Send to connections
           if messages[0] == "wave"{
             fmt.Println("Sending first wave message to neighbours")
+          } else {
+            fmt.Println("Sending second wave message to neighbours")
           }
-          for _, c := range connections {
-            c.Channel <- message
+          for i, c := range connections {
+            if i != parent.ip {
+              c.Channel <- message
+            }
           }
         }
       }
@@ -301,7 +298,11 @@ func handleClient(c Connection, myIP string){
       text, _ := <- c.Channel
       conn := c.Connection
       temp := strings.TrimSpace(string(text)) + ";" + myIP
+      ip := c.ip
       fmt.Fprintf(conn, temp + "\n")
+      message, _ := bufio.NewReader(conn).ReadString('\n')
+      //if err != nil { break }
+      fmt.Println("Message from server " + ip + ": " + message)
     }
 }
 
