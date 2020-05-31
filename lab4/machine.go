@@ -5,7 +5,9 @@ import ("net"
         "bufio"
         "os"
         "time"
-        "strings")
+        "strings"
+        "strconv"
+        "math/rand")
 
 
 /*
@@ -25,7 +27,7 @@ func turnServerUp(port string) (net.Listener){
 func connectClients(ips []string){
   for _, ip := range ips {
     chIP := make(chan string)
-    c := Connection{chIP, connect(ip), false, false, ip, ""}
+    c := Connection{chIP, connect(ip), false, false, ip, 0}
     connections[ip] = &c
   }
 }
@@ -47,12 +49,12 @@ func server(ln net.Listener, ch chan string) {
   Checks whether all connections have finished the corresponding wave or not.
   First marks if this is the first (election) or the second (finish) wave.
 */
-func allConnections(first bool, id string) bool {
+func allConnections(first bool, id int) bool {
   for ip, conn := range connections {
       if ip != parent.ip{
         if first {
           if ! conn.electionWave {return false}
-          if id != conn.waveID {return false}
+          if id != conn.ID {return false}
         } else {
           if ! conn.finishWave {return false}
         }
@@ -71,7 +73,7 @@ func deepCopy(conn Connection) Connection{
                         conn.electionWave,
                         conn.finishWave,
                         conn.ip,
-                        conn.waveID}
+                        conn.ID}
   return newConn
 }
 
@@ -84,45 +86,63 @@ func deepCopy(conn Connection) Connection{
   If all neighbours have sent back the same id, send message to parent. But, if the
   machine has no parent, decides and sends a wave to finish processes on all machines.
 */
-func handleWave(ipSender, idSender, idWave string, ch chan string){
-  fmt.Println("Received election wave from " + ipSender + " with wave id: " + idWave)
+func handleWave(ipSender string, roundNumber int, idSender int, treeSize int, ch chan string){
+  fmt.Println("Received election wave from " + ipSender + " with id: " + strconv.Itoa(idSender) + " at round: " + strconv.Itoa(roundNumber) + " subtree size: ", treeSize)
   // If this is the first time the node gets a wave
-  if waveID == "" {
-    waveID = idWave
-    fmt.Println("My parent is " + idSender)
+  if myID == 0 {
+    myID = idSender
+    fmt.Println("1. My parent is " + ipSender + " with ID: " + strconv.Itoa(idSender))
     parent = *connections[ipSender]
-    parent.waveID = idWave
+    parent.ID = idSender
+    mySubsize = 0
     if len(connections) > 0 {
-       ch <- "wave;" + idWave // Send wave to neighbours with wave id
+       //ch <- "wave;" + idSender // Send wave to neighbours with wave id
+       ch <- "wave;" + myIP + ";" + strconv.Itoa(myRound) + ";" + strconv.Itoa(myID) + ";0"
     }
   } else {
     // If this new wave has a larger ID than the wave that has already hit me
-    if idWave > waveID {
-      fmt.Println("My parent is " + idSender)
-      waveID = idWave
+    if roundNumber > myRound || (myRound == roundNumber && idSender > myID)  {
+      fmt.Println("2. My parent is " + ipSender + " with ID: " + strconv.Itoa(idSender) + " and my new ID is ", idSender)
+      myID = idSender
+      myRound = roundNumber
       parent = deepCopy(*connections[ipSender]) // Mark this new node as a parent
-      parent.waveID = idWave
+      parent.ID = idSender
+      mySubsize = 0
       if len(connections) > 0 {
          // Since the node is joining a new wave, we have to mark that
          // the other neighbours have not sent the node this wave.
          for _, c := range connections {
            c.electionWave = false
          }
-         ch <- "wave;" + idWave // Send wave to neighbours
+         //ch <- "wave;" + idWave // Send wave to neighbours
+         ch <- "wave;" + myIP + ";" + strconv.Itoa(myRound) + ";" + strconv.Itoa(myID) + ";0"
       }
-    } else if idWave == waveID{
+    } else if myRound == roundNumber && myID == idSender {
       connections[ipSender].electionWave = true // Mark this neighbour as received
-      connections[ipSender].waveID = idWave
+      connections[ipSender].ID = idSender
+      mySubsize += treeSize
     }
   }
     // Checking whether all neighbours have sent me the same wave
-    if allConnections(true, idWave) {
+    if allConnections(true, idSender) {
       // If this is an initial node and has no parent, it decides
       if myIP == parent.ip {
-        fmt.Println("DECISION EVENT - I'M THE LEADER")
-        ch <- "finish;" + idWave // sending finish wave
+        //fmt.Println("The current size is: " + strconv.Itoa(mySubsize + 1) + " and the network size is: " + strconv.Itoa(N))
+        if mySubsize + 1 == N{
+          fmt.Println("DECISION EVENT - I'M THE LEADER")
+          ch <- "finish;" + myIP + ";"+ strconv.Itoa(myID) // sending finish wave !!!???? TODO
+        } else {
+          myRound += 1
+          // Since the node is joining a new wave, we have to mark that
+          // the other neighbours have not sent the node this wave.
+          for _, c := range connections {
+            c.electionWave = false
+          }
+          generateIDandSend()
+        }
+
       } else { // If this node has a parent, send wave to parent
-        ch <- "parent;wave;" + idWave
+        ch <- "parent;wave;" + myIP + ";" + strconv.Itoa(roundNumber) + ";" + strconv.Itoa(idSender) + ";" + strconv.Itoa(mySubsize + 1)
       }
       finishWave = true
     }
@@ -134,11 +154,11 @@ func handleWave(ipSender, idSender, idWave string, ch chan string){
   If all messages from neighbours have arrived, sends message to parent.
   If parent has received all messages from neighbours, finishes.
 */
-func handleFinishWave(ip, id string, ch chan string){
+func handleFinishWave(ip string, id int, ch chan string){
   fmt.Println("Received finish wave from " + ip)
   if finishWave && parent.ip != myIP {
     if len(connections) > 0 { // This means that it has neighbours and not only a parent
-       ch <- "finish;" + myID
+       ch <- "finish;" + myIP + ";" + strconv.Itoa(myID)
     }
     finishWave = false
   }
@@ -150,7 +170,7 @@ func handleFinishWave(ip, id string, ch chan string){
   if allConnections(false, id) {
     // If this is not an initial node, send message to parent
     if parent.ip != myIP {
-      ch <- "parent;finish;" + myID
+      ch <- "parent;finish;" + myIP + ";" + strconv.Itoa(myID)
       time.Sleep(time.Second/4)
     }
     fmt.Println("I'm going to finish.")
@@ -167,15 +187,18 @@ func serverConnection(conn net.Conn, ch chan string){
   // output message received
   text := strings.TrimSpace(string(message))
   temp := strings.Split(string(text), ";")
-  if len(temp) == 4 {
+  if len(temp) >= 2 {
     message = temp[0]
-    idWave := temp[1]
-    ipSender := temp[2]
-    idSender := temp[3]
+    ipSender := temp[1]
     if message == "wave"{
-      handleWave(ipSender, idSender, idWave, ch)
+      //handleWave(ipSender, idSender, idWave, ch)
+      roundNumber, _ := strconv.Atoi(temp[2])
+      idSender, _ := strconv.Atoi(temp[3])
+      sizeTree, _ := strconv.Atoi(temp[4])
+      handleWave(ipSender, roundNumber, idSender, sizeTree, ch)
     } else if message == "finish"{
-      handleFinishWave(ipSender, idWave, ch)
+      idSender, _ := strconv.Atoi(temp[2])
+      handleFinishWave(ipSender, idSender, ch)
     }
   }
   newmessage := strings.ToUpper(message)
@@ -209,15 +232,15 @@ func connect(ip string) net.Conn{
   Shows the usage of the program. How should it be executed.
 */
 func usage(){
-    fmt.Println("The path to a configuration file is needed.")
-    fmt.Println("-- for example: ./machine config.txt")
+    fmt.Println("The path to a configuration file and an integer number are needed.")
+    fmt.Println("-- for example: ./machine config.txt 5")
 }
 
 
 /*
   Reads the configuration file. Obtains the port and clients ip's.
 */
-func getConfig(myFile string) (string, string, string, bool, []string){
+func getConfig(myFile string) (string, string, bool, []string){
   file, err := os.Open(myFile)
   if err != nil {
       fmt.Println(err)
@@ -226,25 +249,41 @@ func getConfig(myFile string) (string, string, string, bool, []string){
 
   scanner := bufio.NewScanner(file)
   first := true
-  serverIP, serverPort, id := "", "", ""
+  serverIP, serverPort := "", ""
   init := false
   ips := []string{}
   for scanner.Scan() {
       if first {
         texts := strings.Split(scanner.Text(), ":")
-        if len(texts) == 4 {
+        if len(texts) == 3 {
           fmt.Println("This is an initial node")
           init = true
         }
         serverIP = texts[0]
         serverPort = texts[1]
-        id = texts[2]
         first = false
       } else {
         ips = append(ips, scanner.Text()) // Saving every client's ip
       }
   }
-  return serverIP, serverPort, id, init, ips
+  return serverIP, serverPort, init, ips
+}
+
+
+/*
+  Generates a random ID (Range 1...N) and sends it to neighbours
+*/
+func generateIDandSend(){
+    // generate random ID = [1...N]
+    //fmt.Println("Time: ", time.Now().UnixNano())
+    rand.Seed(time.Now().UnixNano())
+    myID = rand.Intn(N) + 1
+    fmt.Println("Now my ID is " + strconv.Itoa(myID) + " at round ", myRound)
+    mySubsize = 0
+
+    for _, c := range connections {
+      c.Channel <- "wave;" + myIP + ";" + strconv.Itoa(myRound) + ";" + strconv.Itoa(myID) + ";0"
+    }
 }
 
 
@@ -259,11 +298,9 @@ func clients(ips []string, ch chan string, myIP string) {
 
     for {
         if initial && electionWave {
-          waveID = myID
-          parent = Connection{nil, nil, false, false, myIP, waveID}
-          for _, c := range connections {
-            c.Channel <- "wave;" + myID
-          }
+          myRound = 0
+          generateIDandSend()
+          parent = Connection{nil, nil, false, false, myIP, myID}
           fmt.Println("Init -> Sending election wave message to neighbours")
           electionWave = false
         }
@@ -306,7 +343,8 @@ func handleClient(c Connection, myIP string){
       conn := c.Connection
       // A message is sent with the folloring structure:
       // "wave";ID of the wave;IP of the sender; ID of the sender
-      temp := strings.TrimSpace(string(text)) + ";" + myIP + ";" + myID
+      //temp := strings.TrimSpace(string(text)) + ";" + myIP + ";" + myID
+      temp := text
       //ip := c.ip
       fmt.Fprintf(conn, temp + "\n")
       _, err := bufio.NewReader(conn).ReadString('\n')
@@ -325,7 +363,7 @@ type Connection struct {
     electionWave bool // wether the machine has received an electionWave from this client
     finishWave bool // wether the machine has received a finish wave from this client
     ip string // ip of the client
-    waveID string
+    ID int
 }
 
 
@@ -337,18 +375,21 @@ var finishWave bool = false
 var connections = map[string]*Connection{} // Stores neighbours' connections
 var parent Connection // stores parent's connection
 var initial bool = false
-var myID string
-var waveID string = ""
-var myIP string
+var myID int = 0
+var myIP string = ""
+var myRound int
+var N int
+var mySubsize int
 
 func main() {
-    if len(os.Args) != 2{
+    if len(os.Args) != 3{
       usage()
     } else {
       var port string
       var ips []string
       var IP string
-      IP, port, myID, initial, ips = getConfig(os.Args[1])
+      N, _ = strconv.Atoi(os.Args[2])
+      IP, port, initial, ips = getConfig(os.Args[1])
       fmt.Println("This is the server num " + port)
       myIP = IP + ":" + port
 
