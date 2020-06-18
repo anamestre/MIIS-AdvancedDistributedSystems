@@ -91,7 +91,7 @@ func handleWave(ipSender string, roundNumber int, idSender int, treeSize int, ch
   // If this is the first time the node gets a wave
   if myID == 0 {
     myID = idSender
-    fmt.Println("1. My parent is " + ipSender + " with ID: " + strconv.Itoa(idSender))
+    fmt.Println("My parent is " + ipSender + " with ID: " + strconv.Itoa(idSender))
     parent = *connections[ipSender]
     parent.ID = idSender
     mySubsize = 0
@@ -102,7 +102,7 @@ func handleWave(ipSender string, roundNumber int, idSender int, treeSize int, ch
   } else {
     // If this new wave has a larger ID than the wave that has already hit me
     if roundNumber > myRound || (myRound == roundNumber && idSender > myID)  {
-      fmt.Println("2. My parent is " + ipSender + " with ID: " + strconv.Itoa(idSender) + " and my new ID is ", idSender)
+      fmt.Println("My parent is " + ipSender + " with ID: " + strconv.Itoa(idSender) + " and my new ID is ", idSender)
       myID = idSender
       myRound = roundNumber
       parent = deepCopy(*connections[ipSender]) // Mark this new node as a parent
@@ -232,7 +232,7 @@ func connect(ip string) net.Conn{
   Shows the usage of the program. How should it be executed.
 */
 func usage(){
-    fmt.Println("The path to a configuration file and an integer number are needed.")
+    fmt.Println("The path to a configuration file and the network size (integer) are needed.")
     fmt.Println("-- for example: ./machine config.txt 5")
 }
 
