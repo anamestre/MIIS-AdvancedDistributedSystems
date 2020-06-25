@@ -114,7 +114,7 @@ public class MatrixMultiplication {
 
     public void map(Object key, Text value, Context context
                     ) throws IOException, InterruptedException {
-      //StringTokenizer itr = new StringTokenizer(value.toString());
+
       String readLine = value.toString();
       String[] stringTokens = readLine.split(" ");
       char idMatrix = stringTokens[0].charAt(0);
@@ -158,20 +158,26 @@ public class MatrixMultiplication {
                        ) throws IOException, InterruptedException {
       ArrayList<CellWritable> matrixA = new ArrayList<CellWritable>();
       ArrayList<CellWritable> matrixB = new ArrayList<CellWritable>();
+      
+      Configuration conf = context.getConfiguration();
 
       for(CellWritable elem: values) {
-      	if (elem.idMatrix == 'A'){
-      		// then col = key
-      		matrixA.add(elem);
-      	} else {
-      		// then row = key
-      		matrixB.add(elem);
+      
+      	// La gestió de memòria a Java és una locura
+      	CellWritable cell = ReflectionUtils.newInstance(CellWritable.class, conf);
+      	ReflectionUtils.copy(conf, elem, cell);
+      	
+      	if (cell.idMatrix == 'A'){
+      		matrixA.add(cell);
+      	} else if (cell.idMatrix == 'B'){
+      		matrixB.add(cell);
       	}
       }
       
       for(CellWritable eleA: matrixA){
       	for(CellWritable eleB: matrixB){
-      		result.set(eleA.value * eleB.value);
+      		int mult = eleA.value * eleB.value;
+      		result.set(mult);
       		PairWritable newKey = new PairWritable (eleA.position, eleB.position);
       		context.write(newKey, result);
       	}
@@ -191,7 +197,7 @@ public class MatrixMultiplication {
 
       int row = Integer.parseInt(stringTokens[0]);
       int col = Integer.parseInt(stringTokens[1]);
-      int valint = Integer.parseInt(stringTokens[2]);
+      int valint = Integer.parseInt(stringTokens[2].replaceAll("\\s+",""));
       PairWritable pair = new PairWritable(row, col);
       IntWritable val = new IntWritable(valint);
       

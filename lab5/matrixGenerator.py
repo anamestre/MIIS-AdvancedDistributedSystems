@@ -10,10 +10,14 @@ def createMatrix(sizeR, sizeC):
         matrix.append(col)
     return matrix
 
-def writeMatrix(matrix, sizeR, sizeC, fileName):
+def writeMatrix(matrix, sizeR, sizeC, fileName, idm):
     f = open(fileName, "w")
-    f.write(sizeR + " " + sizeC + "\n")
-    f.write(str(matrix))
+    #f.write(sizeR + " " + sizeC + "\n")
+    for i in range(int(sizeR)):
+    	for j in range(int(sizeC)):
+    		f.write(idm + ' ' + str(i) + ' ' + str(j) + ' ' + str(matrix[i][j]) + '\n')
+    		
+    #    f.write(str(matrix))
     f.close()
 
 
@@ -33,7 +37,7 @@ sizeR0, sizeC0, sizeR1, sizeC0 = "", "", "", ""
 readInput()
 
 matrix0 = createMatrix(sizeR0, sizeC0)
-writeMatrix(matrix0, sizeR0, sizeC0, "matrix0.txt")
+writeMatrix(matrix0, sizeR0, sizeC0, "matrix0.txt", 'A')
 
 matrix1 = createMatrix(sizeR1, sizeC1)
-writeMatrix(matrix1, sizeR1, sizeC1, "matrix1.txt")
+writeMatrix(matrix1, sizeR1, sizeC1, "matrix1.txt", 'B')
